@@ -5,3 +5,6 @@ data/
 data/*.zip
 data/*.gz
 *.mp4
+VENV/
+models/
+
