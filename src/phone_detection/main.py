@@ -57,18 +57,10 @@ def _draw_detection(frame_bgr, detections):
                 (x0, max(0, y0 - 10)),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.7,
-                (0, 255, 0)
+                (0, 255, 0),
                 2, 
                 cv2.LINE_AA,
                 )
-
-
-
-
-
-
-
-
 
 
 def main():
@@ -76,13 +68,17 @@ def main():
     Main programme for phone detection project.
 
     Scheme:
-    1. Open the default webcam (maybe a webcam switch function later tho)
-    2. Show live feed video (also maybe just a sound warning and show funny memes instead)
-    3. Quite function (by pressing some key or a combination of keys)
-
-
+    - Open face_detector model (Google AI.......);
+    - Open the default webcam (maybe a webcam switch function later tho) 
+    - Quite function (by pressing some key or a combination of keys)
     """
 
+
+    model_path = _resolve_model_path()
+    if not Path(model_path).exists():
+        raise FileNotFoundError(
+                f"Could not find model file at:\n {model_path}\n\n"
+                "Creat <repo>/models and put face_detector inside it.")
 
     # Open default camera (usually index 0)
     cap = cv2.VideoCapture(0)
@@ -97,64 +93,67 @@ def main():
 
 
     # MediaPipe setup
-    mp_face = mp.solutions.face_detection
-    mp_draw = mp.solutions.drawing_utils
+    BaseOpetions = mp.tasks.BaseOptions
+    FaceDetector = mp.tasks.vision.FaceDetector
+    FaceDetectorOptions = mp.tasks.vision.FaceDetectorOptions
+    VisionRunningMode = mp.tasks.vision.RunningMode
 
     # Model_selection:
     # 0 = short-range (~ within 2m, for laptop used)
     # 1 = full-range (works better for far distances)
+    
+    with FaceDetector.create_from_options(options) as detector:
 
-    with mp_face.FaceDetection(model_selection=0, min_detection_confidence=0.6) as face_detector:
-        print ("Running face detection")
+        print ("Running MediaPipe Task Face Detection. Prease q to quite")
 
 
         while True:
             # Read a frame from the webcam
-            ret, frame = cap.read()
+            ret, frame_bgr = cap.read()
 
             if not ret:
                 print ("WARNING: Failed to grab frame.")
                 break
 
             # MediaPipe expects RGB
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
 
-            # Run face detection
-            results = face_detector.process(frame_rgb)
+
+            # Wrap in mp.Image (SRGB)
+            mp_image = mp.Image(image_format = mp.ImageFormat.SRGB, data = frame_rgb)
+
+            # Timestamp required for VIDEO mode (in ms)
+            timestamp_ms = int(time.monotonic() * 1000) - start_ms
+                
+            # Run detection
+            result = detector.detect_for_video(mp_image, timestamp_ms)
+
+
 
             # Draw Detections
             if results.detections:
-                for det in results.detections:
-                    # Draw bounding box + keypoints (eyes, nose, mouth) using MediaPipe helper
-                    mp_draw.draw_detection(frame, det)
+                _draw_detections(frame_bgr, results.detections)
+                status = f"Faces: {len(result.detections)}"
+                color = (0, 255, 0)
 
-                    # Show how confidence for the detections
-                    score = det.score[0] if det.score else 0.0
-                    cv2.putText(
-                            frame,
-                            f"Face: {score:.2f}",
-                            (10, 30),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            1.0,
-                            (0, 255, 0),
-                            2,
-                            cv2.LINE_AA,
-                            )
-                else:
-                    cv2.putText(
-                            frame,
-                            "NO FACE",
-                            (10, 30),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            1.0,
-                            (0, 0, 255),
-                            2,
-                            cv2.LINE_AA,
-                            )
+            else:
+                status = "No face"
+                color = (0, 0, 255)
+
+            cv2.putText(
+                    frame_bgr,
+                    status,
+                    (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1.0,
+                    color,
+                    2, 
+                    cv2.LINE_AA,
+                    )
 
 
             # Show the frame
-            cv2.imshow("Phone Detection", frame)
+            cv2.imshow("Phone Detection (just face lol)", frame)
 
             # Exit when 'q' is press
             if cv2.waitKey(1) & 0xFF == ord("q"):
