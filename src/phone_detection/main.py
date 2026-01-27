@@ -24,7 +24,44 @@ def _draw_detection(frame_bgr, detections):
     Draw face bounding boxes + confidence on the frame
     """
 
-    return 
+    h, w  = frame_bgr.shape[:2]
+
+    for det in detections:
+        # det.bounding_box is basically the input image coordinations.
+        bbox = det.bounding_box
+        x0 = int(bbox.origin_x)
+        y0 = int(bbox.origin_y)
+        x1 = int(bbox.origion_x + bbox.width)
+        y1 = int(bbox.origin_y + bbox.height)
+
+        # Clamp to frame bounds (defensive)
+        x0 = max(0, min(w - 1, x0))
+        y0 = max(0, min(h - 1, y0))
+        x1 = max(0, min(w - 1, x1))
+        y1 = max(0, min(h - 1, y1))
+
+        cv2.rectangle(frame_bgr, (x0, y0), (x1, y1), (0, 255, 0), 2)
+
+
+        # Confidence score is usually in categories[0].score
+
+        score = None
+        if det.categories:
+            score = det.categories[0].score
+
+        label = f"Face {score:.2f}" if score is not None else "Face"
+
+        cv2.putText(
+                frame_bgr,
+                label,
+                (x0, max(0, y0 - 10)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (0, 255, 0)
+                2, 
+                cv2.LINE_AA,
+                )
+
 
 
 
