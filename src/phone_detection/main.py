@@ -31,7 +31,7 @@ def _draw_detection(frame_bgr, detections):
         bbox = det.bounding_box
         x0 = int(bbox.origin_x)
         y0 = int(bbox.origin_y)
-        x1 = int(bbox.origion_x + bbox.width)
+        x1 = int(bbox.origin_x + bbox.width)
         y1 = int(bbox.origin_y + bbox.height)
 
         # Clamp to frame bounds (defensive)
@@ -61,7 +61,6 @@ def _draw_detection(frame_bgr, detections):
                 2, 
                 cv2.LINE_AA,
                 )
-
 
 def main():
     """
@@ -93,14 +92,18 @@ def main():
 
 
     # MediaPipe setup
-    BaseOpetions = mp.tasks.BaseOptions
+    BaseOptions = mp.tasks.BaseOptions
     FaceDetector = mp.tasks.vision.FaceDetector
     FaceDetectorOptions = mp.tasks.vision.FaceDetectorOptions
     VisionRunningMode = mp.tasks.vision.RunningMode
 
-    # Model_selection:
-    # 0 = short-range (~ within 2m, for laptop used)
-    # 1 = full-range (works better for far distances)
+    options = FaceDetectorOptions(
+            base_options = BaseOptions(model_asset_path=model_path),
+            running_mode = VisionRunningMode.VIDEO,
+            min_detection_confidence = 0.85,
+            ) #Change min detection conf to more if want more strict detection
+
+    start_ms = int(time.monotonic()*1000)
     
     with FaceDetector.create_from_options(options) as detector:
 
@@ -131,8 +134,8 @@ def main():
 
 
             # Draw Detections
-            if results.detections:
-                _draw_detections(frame_bgr, results.detections)
+            if result.detections:
+                _draw_detection(frame_bgr, result.detections)
                 status = f"Faces: {len(result.detections)}"
                 color = (0, 255, 0)
 
@@ -153,7 +156,7 @@ def main():
 
 
             # Show the frame
-            cv2.imshow("Phone Detection (just face lol)", frame)
+            cv2.imshow("Phone Detection (just face lol)", frame_bgr)
 
             # Exit when 'q' is press
             if cv2.waitKey(1) & 0xFF == ord("q"):
