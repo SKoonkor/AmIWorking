@@ -1,0 +1,7 @@
+*.zip
+*.gz
+*.log
+data/
+data/*.zip
+data/*.gz
+*.mp4
