@@ -1,7 +1,38 @@
 # Python libraries
 
+import time
+from pathlib import Path
+
 import cv2
 import mediapipe as mp
+
+
+def _resolve_model_path() -> str:
+    """
+    Resolve models/fact_detector.model relative to the repo root.
+    """
+
+    this_file = Path(__file__).resolve()
+    repo_root = this_file.parents[2] # main.py -> phone_detection -> src -> ropo_root
+    model_path = repo_root / "models" / "blaze_face_short_range.tflite"
+
+    return str(model_path)
+
+
+def _draw_detection(frame_bgr, detections):
+    """
+    Draw face bounding boxes + confidence on the frame
+    """
+
+    return 
+
+
+
+
+
+
+
+
 
 def main():
     """
