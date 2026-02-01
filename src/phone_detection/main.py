@@ -5,7 +5,6 @@ from pathlib import Path
 
 import cv2
 import mediapipe as mp
-from ultralytics import YOLO
 
 # Local packages
 from visualize import (
@@ -19,8 +18,16 @@ from logic import (
         phone_held_by_hand, 
         PhoneUseStateMachine,
         SmoothingConfig,
-        intersects,
-        iou,
+        )
+
+from detectors.phone import (
+        PhoneDetector,
+        PhoneDetectorConfig,
+        )
+
+from detectors.hand import (
+        HandDetector,
+        HandDetectorConfig,
         )
 
 ## PATHS to models
@@ -49,28 +56,28 @@ def _model_path(filename: str) -> str:
 def _clamp(v, lo, hi):
     return max(lo, min(hi, v))
 
-def _bbox_from_normalized_landmarks(norm_landmarks, w: int, h: int, pad: int = 10):
-    """
-    norm_landmarks: finding some values of .x, .y in [0, 1]
-    Return bbox in pixel coords: (x0, y0, x1, y1)
-    """
-    xs = [lm.x for lm in norm_landmarks]
-    ys = [lm.y for lm in norm_landmarks]
-
-    if not xs or not ys:
-        return None
-
-    x0 = int(min(xs) * w) - pad
-    y0 = int(min(ys) * h) - pad
-    x1 = int(max(xs) * w) + pad
-    y1 = int(max(ys) * h) + pad
-
-    x0 = _clamp(x0, 0, w - 1)
-    y0 = _clamp(y0, 0, h - 1)
-    x1 = _clamp(x1, 0, w - 1)
-    y1 = _clamp(y1, 0, h - 1)
-
-    return (x0, y0, x1, y1)
+# def _bbox_from_normalized_landmarks(norm_landmarks, w: int, h: int, pad: int = 10):
+#     """
+#     norm_landmarks: finding some values of .x, .y in [0, 1]
+#     Return bbox in pixel coords: (x0, y0, x1, y1)
+#     """
+#     xs = [lm.x for lm in norm_landmarks]
+#     ys = [lm.y for lm in norm_landmarks]
+# 
+#     if not xs or not ys:
+#         return None
+# 
+#     x0 = int(min(xs) * w) - pad
+#     y0 = int(min(ys) * h) - pad
+#     x1 = int(max(xs) * w) + pad
+#     y1 = int(max(ys) * h) + pad
+# 
+#     x0 = _clamp(x0, 0, w - 1)
+#     y0 = _clamp(y0, 0, h - 1)
+#     x1 = _clamp(x1, 0, w - 1)
+#     y1 = _clamp(y1, 0, h - 1)
+# 
+#     return (x0, y0, x1, y1)
 
 def _get_face_boxes(detections):
     """
@@ -87,73 +94,6 @@ def _get_face_boxes(detections):
         boxes.append((x0, y0, x1, y1))
 
     return boxes
-
-
-## YOLO PHone detectionj
-
-def _detect_phones_yolo(yolo_model, frame_bgr, conf_thres = 0.4, img_size = 640):
-    """
-    Run YOLO and return phone boxes in original frame coordinates. 
-    Returns: list of (x0, y0, x1, y1, conf.)
-    """
-
-    h, w = frame_bgr.shape[:2]
-
-    # Resize for speed (keep aspect ratio by simple scaling)
-    scale = img_size/max(h, w)
-
-    if scale < 1.0:
-        new_w = int(w * scale)
-        new_h = int(h * scale)
-        small = cv2.resize(frame_bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
-    else:
-        small = frame_bgr
-        new_h, new_w = h, w
-        scale = 1.0
-
-    # Ultralytics expects BGR or RGB
-    # verbose = False keeps the console clean.
-    results = yolo_model.predict(small, conf = conf_thres, verbose=False)
-    
-    phone_boxes = []
-    r0 = results[0]
-    if r0.boxes is None or len(r0.boxes) == 0:
-        return phone_boxes
-    
-    names = r0.names # dict: class_id -> class_name
-
-    # Iterate detections
-    for box in r0.boxes:
-        cls_id = int(box.cls.item())
-        cls_name = names.get(cls_id, str(cls_id))
-        if cls_name != "cell phone":
-            continue
-        
-        conf = float(box.conf.item())
-        x0, y0, x1, y1, = box.xyxy[0].tolist()
-
-        # Map back to origianl frame coordinates
-        if scale != 1.0:
-            x0 = x0 / scale
-            y0 = y0 / scale
-            x1 = x1 / scale
-            y1 = y1 / scale
-
-        # Clamp + int
-        x0 = _clamp(int(x0), 0, w - 1)
-        y0 = _clamp(int(y0), 0, h - 1)
-        x1 = _clamp(int(x1), 0, w - 1)
-        y1 = _clamp(int(y1), 0, h - 1)
-
-        phone_boxes.append((x0, y0, x1, y1, conf))
-
-    return phone_boxes
-
-
-
-
-
-
 
 
 
@@ -212,17 +152,26 @@ def main():
             min_detection_confidence = 0.85,
             ) #Change min detection conf to more if want more strict detection
 
-    HandLandmarker = mp.tasks.vision.HandLandmarker
-    HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
-
-    hand_options = HandLandmarkerOptions(
-            base_options = BaseOptions(model_asset_path = hand_model),
-            running_mode = VisionRunningMode.VIDEO,
+#     HandLandmarker = mp.tasks.vision.HandLandmarker
+#     HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
+# 
+#     hand_options = HandLandmarkerOptions(
+#             base_options = BaseOptions(model_asset_path = hand_model),
+#             running_mode = VisionRunningMode.VIDEO,
+#             num_hands = 2,
+#             min_hand_detection_confidence = 0.5,
+#             min_hand_presence_confidence = 0.5,
+#             min_tracking_confidence = 0.5, 
+#             )
+    hand_cfg = HandDetectorConfig(
+            model_path = hand_model,
             num_hands = 2,
             min_hand_detection_confidence = 0.5,
             min_hand_presence_confidence = 0.5,
-            min_tracking_confidence = 0.5, 
-            )
+            min_tracking_confidence = 0.5,
+            bbox_pad_px = 10,)
+
+    # hand_detector = HandDetector(hand_cfg)
 
 
 
@@ -231,8 +180,15 @@ def main():
     ## YOLO (phone detection)
     # 'yolov8n.pt' is the smallest + fastest general model.
     # First run will download it,,,, nice
-    yolo = YOLO("yolov8n.pt")
-    phone_conf = 0.4
+    # yolo = YOLO("yolov8n.pt")
+    # phone_conf = 0.4
+
+    phone_detector = PhoneDetector(
+            PhoneDetectorConfig(weights = "yolov8n.pt",
+                                conf = 0.5,
+                                img_size = 640)
+            )
+
 
     ## Use the state machine (sm) config class instead
     sm = PhoneUseStateMachine(SmoothingConfig(phone_on_frames = 5, 
@@ -252,7 +208,7 @@ def main():
 
 
     with FaceDetector.create_from_options(face_options) as face_detector,\
-            HandLandmarker.create_from_options(hand_options) as hand_landmarker:
+            HandDetector(hand_cfg) as hand_detector:
 
 
         print ("Running MediaPipe Task Face+Hand Detection. Prease q to quite")
@@ -292,30 +248,33 @@ def main():
                 
             #____________________
             # Run hand detections
-            hand_result = hand_landmarker.detect_for_video(mp_image, timestamp_ms)
-            # Draw hand boxex
-            hand_boxes  = []
-            if hand_result.hand_landmarks:
-                for hand_lms in hand_result.hand_landmarks:
-                    hb = _bbox_from_normalized_landmarks(hand_lms,
-                                                         w = w, 
-                                                         h = h,
-                                                         pad = 10)
-                    if hb is not None:
-                        hand_boxes.append(hb)
+#             hand_result = hand_landmarker.detect_for_video(mp_image, timestamp_ms)
+#             # Draw hand boxex
+#             hand_boxes  = []
+#             if hand_result.hand_landmarks:
+#                 for hand_lms in hand_result.hand_landmarks:
+#                     hb = _bbox_from_normalized_landmarks(hand_lms,
+#                                                          w = w, 
+#                                                          h = h,
+#                                                          pad = 10)
+#                     if hb is not None:
+#                         hand_boxes.append(hb)
+
+            hand_boxes = hand_detector.detect(mp_image,
+                                              timestamp_ms,
+                                              image_w = w,
+                                              image_h = h,
+                                              )
 
             if hand_boxes:
                 draw_hand_boxes(frame_bgr, hand_boxes)
 
             #____________________
             # Run phone detection
-            phone_boxes = _detect_phones_yolo(yolo,
-                                              frame_bgr,
-                                              conf_thres = phone_conf,
-                                              img_size = 640)
+            phone_boxes = phone_detector.detect(frame_bgr)
+
             if phone_boxes:
                 draw_phone_boxes(frame_bgr, phone_boxes)
-
 
 
             #___________________________________
@@ -369,6 +328,8 @@ def main():
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
 
+    # Close Mediapipe tasks
+    hand_detector.close()
 
     # Cleanup
     cap.release()
