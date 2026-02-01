@@ -9,7 +9,7 @@ def _clamp(v, lo, hi):
 @dataclass
 class PhoneDetectorConfig:
     weights: str = "yolov8n.plt"
-    conf: float = 0.5
+    conf: float = 0.4
     img_size: int = 640
 
 

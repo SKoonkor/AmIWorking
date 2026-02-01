@@ -33,13 +33,17 @@ from detectors.face import (
         FaceDetectorConfig,
         )
 
+from camera import (
+        Camera,
+        CameraConfig,
+        )
+
 ## PATHS to models
 
 def _repo_root() -> Path:
     """
     Assumes: <repo>/src/phone_detection/main.py
     """
-
     return Path(__file__).resolve().parents[2]
 
 def _model_path(filename: str) -> str:
@@ -49,12 +53,8 @@ def _model_path(filename: str) -> str:
     Face: blaze_face_short_range.tflite
     Hand: hand_landmarker.task
     """
-
     model_path = _repo_root() / "models" / filename
-
     return str(model_path)
-
-
 
 def main():
     """
@@ -84,39 +84,24 @@ def main():
 
 
     ## Open camera
-    # Open default camera (usually index 0)
-    cap = cv2.VideoCapture(0)
-        # Change the index for different camera if there is any, later tho
-
-    # Check if the camera opened successfully 
-    if not cap.isOpened():
-        raise RuntimeError("ERROR: Could not open camera.")
-
-    print ("Camera opened successfully. Press 'q' to quite.")
+    camera_cfg = CameraConfig()
 
 
     ###### MediaPipe setup
     face_cfg = FaceDetectorConfig(
             model_path = face_model,
-            min_detection_confidence = 0.6,
             )
 
     hand_cfg = HandDetectorConfig(
             model_path = hand_model,
             num_hands = 2,
-            min_hand_detection_confidence = 0.5,
-            min_hand_presence_confidence = 0.5,
-            min_tracking_confidence = 0.5,
             bbox_pad_px = 10,)
-
 
     ## YOLO (phone detection)
     phone_detector = PhoneDetector(
             PhoneDetectorConfig(weights = "yolov8n.pt",
-                                conf = 0.5,
                                 img_size = 640)
             )
-
 
     ## Use the state machine (sm) config class instead
     sm = PhoneUseStateMachine(SmoothingConfig(phone_on_frames = 5, 
@@ -135,7 +120,8 @@ def main():
 
 
 
-    with FacePresenceDetector(face_cfg) as face_detector,\
+    with Camera(camera_cfg) as cam,\
+            FacePresenceDetector(face_cfg) as face_detector,\
             HandDetector(hand_cfg) as hand_detector:
 
 
@@ -144,11 +130,11 @@ def main():
 
         while True:
             # Read a frame from the webcam
-            ret, frame_bgr = cap.read()
+            #ret, frame_bgr = cap.read()
+            frame_bgr = cam.read()
 
-            frame_bgr = cv2.flip(frame_bgr, 1) #Flip horizontally
 
-            if not ret:
+            if frame_bgr is None:
                 print ("WARNING: Failed to grab frame.")
                 break
 
@@ -161,7 +147,6 @@ def main():
             # Timestamp required for VIDEO mode (in ms)
             timestamp_ms = int(time.monotonic() * 1000) - start_ms
               
-
 
             ###########################################
             ####### Run detection
@@ -240,9 +225,8 @@ def main():
                 break
 
     # Cleanup
-    cap.release()
     cv2.destroyAllWindows()
-    print ("Webcam released. Programme exited noicely and clean.")
+    print ("\n\n\nWebcam released. Programme exited noicely and clean.")
 
 
 
