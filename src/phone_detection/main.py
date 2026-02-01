@@ -29,6 +29,10 @@ from detectors.hand import (
         HandDetector,
         HandDetectorConfig,
         )
+from detectors.face import (
+        FacePresenceDetector,
+        FaceDetectorConfig,
+        )
 
 ## PATHS to models
 
@@ -56,28 +60,6 @@ def _model_path(filename: str) -> str:
 def _clamp(v, lo, hi):
     return max(lo, min(hi, v))
 
-# def _bbox_from_normalized_landmarks(norm_landmarks, w: int, h: int, pad: int = 10):
-#     """
-#     norm_landmarks: finding some values of .x, .y in [0, 1]
-#     Return bbox in pixel coords: (x0, y0, x1, y1)
-#     """
-#     xs = [lm.x for lm in norm_landmarks]
-#     ys = [lm.y for lm in norm_landmarks]
-# 
-#     if not xs or not ys:
-#         return None
-# 
-#     x0 = int(min(xs) * w) - pad
-#     y0 = int(min(ys) * h) - pad
-#     x1 = int(max(xs) * w) + pad
-#     y1 = int(max(ys) * h) + pad
-# 
-#     x0 = _clamp(x0, 0, w - 1)
-#     y0 = _clamp(y0, 0, h - 1)
-#     x1 = _clamp(x1, 0, w - 1)
-#     y1 = _clamp(y1, 0, h - 1)
-# 
-#     return (x0, y0, x1, y1)
 
 def _get_face_boxes(detections):
     """
@@ -94,8 +76,6 @@ def _get_face_boxes(detections):
         boxes.append((x0, y0, x1, y1))
 
     return boxes
-
-
 
 
 
@@ -140,29 +120,23 @@ def main():
 
 
     ###### MediaPipe setup
-    BaseOptions = mp.tasks.BaseOptions
-    VisionRunningMode = mp.tasks.vision.RunningMode
+    # BaseOptions = mp.tasks.BaseOptions
+    # VisionRunningMode = mp.tasks.vision.RunningMode
 
-    FaceDetector = mp.tasks.vision.FaceDetector
-    FaceDetectorOptions = mp.tasks.vision.FaceDetectorOptions
-
-    face_options = FaceDetectorOptions(
-            base_options = BaseOptions(model_asset_path = face_model),
-            running_mode = VisionRunningMode.VIDEO,
-            min_detection_confidence = 0.85,
-            ) #Change min detection conf to more if want more strict detection
-
-#     HandLandmarker = mp.tasks.vision.HandLandmarker
-#     HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
+#     FaceDetector = mp.tasks.vision.FaceDetector
+#     FaceDetectorOptions = mp.tasks.vision.FaceDetectorOptions
 # 
-#     hand_options = HandLandmarkerOptions(
-#             base_options = BaseOptions(model_asset_path = hand_model),
+#     face_options = FaceDetectorOptions(
+#             base_options = BaseOptions(model_asset_path = face_model),
 #             running_mode = VisionRunningMode.VIDEO,
-#             num_hands = 2,
-#             min_hand_detection_confidence = 0.5,
-#             min_hand_presence_confidence = 0.5,
-#             min_tracking_confidence = 0.5, 
-#             )
+#             min_detection_confidence = 0.85,
+#             ) #Change min detection conf to more if want more strict detection
+
+    face_cfg = FaceDetectorConfig(
+            model_path = face_model,
+            min_detection_confidence = 0.6,
+            )
+
     hand_cfg = HandDetectorConfig(
             model_path = hand_model,
             num_hands = 2,
@@ -207,7 +181,7 @@ def main():
 
 
 
-    with FaceDetector.create_from_options(face_options) as face_detector,\
+    with FacePresenceDetector(face_cfg) as face_detector,\
             HandDetector(hand_cfg) as hand_detector:
 
 
@@ -240,25 +214,16 @@ def main():
             
             #___________________
             # Run face detection
-            face_result = face_detector.detect_for_video(mp_image, timestamp_ms)
-            face_present = bool(face_result.detections)
-            # Draw face Detections
-            if face_result.detections:
-                draw_face_detection(frame_bgr, face_result.detections)
+#             face_result = face_detector.detect_for_video(mp_image, timestamp_ms)
+#             face_present = bool(face_result.detections)
+            face_present, face_detections = face_detector.detect(mp_image, timestamp_ms)
+#             # Draw face Detections
+            if face_detections:
+                draw_face_detection(frame_bgr, face_detections)
+
                 
             #____________________
             # Run hand detections
-#             hand_result = hand_landmarker.detect_for_video(mp_image, timestamp_ms)
-#             # Draw hand boxex
-#             hand_boxes  = []
-#             if hand_result.hand_landmarks:
-#                 for hand_lms in hand_result.hand_landmarks:
-#                     hb = _bbox_from_normalized_landmarks(hand_lms,
-#                                                          w = w, 
-#                                                          h = h,
-#                                                          pad = 10)
-#                     if hb is not None:
-#                         hand_boxes.append(hb)
 
             hand_boxes = hand_detector.detect(mp_image,
                                               timestamp_ms,
@@ -291,8 +256,8 @@ def main():
 
 
             # New status lines
-            n_faces = len(face_result.detections) if face_result.detections else 0
-            n_phones = len(phone_boxes)
+            # n_faces = len(face_result.detections) if face_result.detections else 0
+            # n_phones = len(phone_boxes)
 
             # FPS count
             frame_count += 1
