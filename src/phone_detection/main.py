@@ -7,6 +7,14 @@ import cv2
 import mediapipe as mp
 from ultralytics import YOLO
 
+# Local packages
+from visualize import (
+        draw_face_detection,
+        draw_hand_boxes,
+        draw_phone_boxes,
+        draw_status_line,
+        )
+
 ## PATHS to models
 
 def _repo_root() -> Path:
@@ -87,54 +95,72 @@ def _intersects(a, b) -> bool:
     return not(ax1 < bx0 or bx1 < ax0 or ay1 < by0 or by1 < ay0)
 
 
-def _draw_face_detection(frame_bgr, detections):
-    """
-    Draw face bounding boxes + confidence on the frame
-    """
-
-    h, w  = frame_bgr.shape[:2]
-
-    for det in detections:
-        # det.bounding_box is basically the input image coordinations.
-        bbox = det.bounding_box
-        x0 = _clamp(int(bbox.origin_x), 0, w - 1)
-        y0 = _clamp(int(bbox.origin_y), 0, h - 1)
-        x1 = _clamp(int(bbox.origin_x + bbox.width), 0, w - 1)
-        y1 = _clamp(int(bbox.origin_y + bbox.height), 0, h - 1)
-
-        cv2.rectangle(frame_bgr, (x0, y0), (x1, y1), (0, 255, 0), 2)
-
-
-        # Confidence score is usually in categories[0].score
-
-        score = det.categories[0].score if det.categories else None
-
-        label = f"Face {score:.2f}" if score is not None else "Face"
-
-        cv2.putText(
-                frame_bgr,
-                label,
-                (x0, max(0, y0 - 10)),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                (0, 255, 0),
-                2, 
-                cv2.LINE_AA,
-                )
-
-def _draw_hand_boxes(frame_bgr, hand_boxes):
-    for (x0, y0, x1, y1) in hand_boxes:
-        cv2.rectangle(frame_bgr, (x0, y0), (x1, y1), (255, 0, 255), 2)
-        cv2.putText(
-                frame_bgr,
-                "Hand",
-                (x0, max(0, y0 - 10)),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                (255, 0, 255),
-                2, 
-                cv2.LINE_AA,
-                )
+# def _draw_face_detection(frame_bgr, detections):
+#     """
+#     Draw face bounding boxes + confidence on the frame
+#     """
+# 
+#     h, w  = frame_bgr.shape[:2]
+# 
+#     for det in detections:
+#         # det.bounding_box is basically the input image coordinations.
+#         bbox = det.bounding_box
+#         x0 = _clamp(int(bbox.origin_x), 0, w - 1)
+#         y0 = _clamp(int(bbox.origin_y), 0, h - 1)
+#         x1 = _clamp(int(bbox.origin_x + bbox.width), 0, w - 1)
+#         y1 = _clamp(int(bbox.origin_y + bbox.height), 0, h - 1)
+# 
+#         cv2.rectangle(frame_bgr, (x0, y0), (x1, y1), (0, 255, 0), 2)
+# 
+# 
+#         # Confidence score is usually in categories[0].score
+# 
+#         score = det.categories[0].score if det.categories else None
+# 
+#         label = f"Face {score:.2f}" if score is not None else "Face"
+# 
+#         cv2.putText(
+#                 frame_bgr,
+#                 label,
+#                 (x0, max(0, y0 - 10)),
+#                 cv2.FONT_HERSHEY_SIMPLEX,
+#                 0.7,
+#                 (0, 255, 0),
+#                 2, 
+#                 cv2.LINE_AA,
+#                 )
+# 
+# def _draw_hand_boxes(frame_bgr, hand_boxes):
+#     for (x0, y0, x1, y1) in hand_boxes:
+#         cv2.rectangle(frame_bgr, (x0, y0), (x1, y1), (255, 0, 255), 2)
+#         cv2.putText(
+#                 frame_bgr,
+#                 "Hand",
+#                 (x0, max(0, y0 - 10)),
+#                 cv2.FONT_HERSHEY_SIMPLEX,
+#                 0.7,
+#                 (255, 0, 255),
+#                 2, 
+#                 cv2.LINE_AA,
+#                 )
+# 
+# def _draw_phone_boxes(frame_bgr, phone_boxes):
+#     """
+#     phone_boxes: list of tubles (x0, y0, x1, y1, conf)
+#     """
+# 
+#     for (x0, y0, x1, y1, conf) in phone_boxes:
+#         cv2.rectangle(frame_bgr, (x0, y0), (x1, y1), (255, 255, 0), 2)
+#         cv2.putText(
+#                 frame_bgr,
+#                 f"Phone {conf:.2f}",
+#                 (x0, max(0, y0 - 10)),
+#                 cv2.FONT_HERSHEY_SIMPLEX,
+#                 0.7,
+#                 (255, 255, 0),
+#                 2,
+#                 cv2.LINE_AA,
+#                 )
 
 
 def _get_face_boxes(detections):
@@ -155,23 +181,6 @@ def _get_face_boxes(detections):
 
 
 
-def _draw_phone_boxes(frame_bgr, phone_boxes):
-    """
-    phone_boxes: list of tubles (x0, y0, x1, y1, conf)
-    """
-
-    for (x0, y0, x1, y1, conf) in phone_boxes:
-        cv2.rectangle(frame_bgr, (x0, y0), (x1, y1), (255, 255, 0), 2)
-        cv2.putText(
-                frame_bgr,
-                f"Phone {conf:.2f}",
-                (x0, max(0, y0 - 10)),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                (255, 255, 0),
-                2,
-                cv2.LINE_AA,
-                )
 
 ## YOLO PHone detectionj
 
@@ -392,7 +401,7 @@ def main():
             face_present = bool(face_result.detections)
             # Draw face Detections
             if face_result.detections:
-                _draw_face_detection(frame_bgr, face_result.detections)
+                draw_face_detection(frame_bgr, face_result.detections)
                 
             #____________________
             # Run hand detections
@@ -409,7 +418,7 @@ def main():
                         hand_boxes.append(hb)
 
             if hand_boxes:
-                _draw_hand_boxes(frame_bgr, hand_boxes)
+                draw_hand_boxes(frame_bgr, hand_boxes)
 
             #____________________
             # Run phone detection
@@ -418,7 +427,7 @@ def main():
                                               conf_thres = phone_conf,
                                               img_size = 640)
             if phone_boxes:
-                _draw_phone_boxes(frame_bgr, phone_boxes)
+                draw_phone_boxes(frame_bgr, phone_boxes)
 
 
 
@@ -481,16 +490,20 @@ def main():
 
             debug = f"{state} | F={int(face_present)} H={len(hand_boxes)} P={len(phone_boxes)} PH={int(phone_held)}"
 
-            cv2.putText(
-                    frame_bgr,
-                    f"{debug} | fps={fps:.1f}",
-                    (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.7,
-                    status_color,
-                    2, 
-                    cv2.LINE_AA,
-                    )
+#             cv2.putText(
+#                     frame_bgr,
+#                     f"{debug} | fps={fps:.1f}",
+#                     (10, 30),
+#                     cv2.FONT_HERSHEY_SIMPLEX,
+#                     0.7,
+#                     status_color,
+#                     2, 
+#                     cv2.LINE_AA,
+#                     )
+
+            draw_status_line(frame_bgr = frame_bgr,
+                             text = f"{debug} : fps={fps:.1f}",
+                             )
 
 
             # Show the frame
