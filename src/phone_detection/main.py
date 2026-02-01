@@ -15,6 +15,14 @@ from visualize import (
         draw_status_line,
         )
 
+from logic import (
+        phone_held_by_hand, 
+        PhoneUseStateMachine,
+        SmoothingConfig,
+        intersects,
+        iou,
+        )
+
 ## PATHS to models
 
 def _repo_root() -> Path:
@@ -64,105 +72,6 @@ def _bbox_from_normalized_landmarks(norm_landmarks, w: int, h: int, pad: int = 1
 
     return (x0, y0, x1, y1)
 
-def _iou(a, b) -> float:
-
-    """
-    Intersection over Union for pixel bboxes a, b = (x0, y0, x1, y1)
-    """
-
-    ax0, ay0, ax1, ay1 = a
-    bx0, by0, bx1, by1 = b
-
-    ix0 = max(ax0, bx0)
-    iy0 = max(ay0, by0)
-    ix1 = min(ax1, bx1)
-    iy1 = min(ay1, by1)
-
-    iw = max(0, ix1 - ix0)
-    ih = max(0, iy1 - iy0)
-    inter = iw * ih
-
-    area_a = max(0, ax1 - ax0) * max(0, ay1 - ay0)
-    area_b = max(0, bx1 - bx0) * max(0, by1 - by0)
-    union = area_a + area_b - inter
-
-    return inter / union if union > 0 else 0.0
-
-
-def _intersects(a, b) -> bool:
-    ax0, ay0, ax1, ay1 = a
-    bx0, by0, bx1, by1 = b
-    return not(ax1 < bx0 or bx1 < ax0 or ay1 < by0 or by1 < ay0)
-
-
-# def _draw_face_detection(frame_bgr, detections):
-#     """
-#     Draw face bounding boxes + confidence on the frame
-#     """
-# 
-#     h, w  = frame_bgr.shape[:2]
-# 
-#     for det in detections:
-#         # det.bounding_box is basically the input image coordinations.
-#         bbox = det.bounding_box
-#         x0 = _clamp(int(bbox.origin_x), 0, w - 1)
-#         y0 = _clamp(int(bbox.origin_y), 0, h - 1)
-#         x1 = _clamp(int(bbox.origin_x + bbox.width), 0, w - 1)
-#         y1 = _clamp(int(bbox.origin_y + bbox.height), 0, h - 1)
-# 
-#         cv2.rectangle(frame_bgr, (x0, y0), (x1, y1), (0, 255, 0), 2)
-# 
-# 
-#         # Confidence score is usually in categories[0].score
-# 
-#         score = det.categories[0].score if det.categories else None
-# 
-#         label = f"Face {score:.2f}" if score is not None else "Face"
-# 
-#         cv2.putText(
-#                 frame_bgr,
-#                 label,
-#                 (x0, max(0, y0 - 10)),
-#                 cv2.FONT_HERSHEY_SIMPLEX,
-#                 0.7,
-#                 (0, 255, 0),
-#                 2, 
-#                 cv2.LINE_AA,
-#                 )
-# 
-# def _draw_hand_boxes(frame_bgr, hand_boxes):
-#     for (x0, y0, x1, y1) in hand_boxes:
-#         cv2.rectangle(frame_bgr, (x0, y0), (x1, y1), (255, 0, 255), 2)
-#         cv2.putText(
-#                 frame_bgr,
-#                 "Hand",
-#                 (x0, max(0, y0 - 10)),
-#                 cv2.FONT_HERSHEY_SIMPLEX,
-#                 0.7,
-#                 (255, 0, 255),
-#                 2, 
-#                 cv2.LINE_AA,
-#                 )
-# 
-# def _draw_phone_boxes(frame_bgr, phone_boxes):
-#     """
-#     phone_boxes: list of tubles (x0, y0, x1, y1, conf)
-#     """
-# 
-#     for (x0, y0, x1, y1, conf) in phone_boxes:
-#         cv2.rectangle(frame_bgr, (x0, y0), (x1, y1), (255, 255, 0), 2)
-#         cv2.putText(
-#                 frame_bgr,
-#                 f"Phone {conf:.2f}",
-#                 (x0, max(0, y0 - 10)),
-#                 cv2.FONT_HERSHEY_SIMPLEX,
-#                 0.7,
-#                 (255, 255, 0),
-#                 2,
-#                 cv2.LINE_AA,
-#                 )
-
-
 def _get_face_boxes(detections):
     """
     Return list of face boxes as (x0, y0, x1, y1) in pixel coordinates.
@@ -178,8 +87,6 @@ def _get_face_boxes(detections):
         boxes.append((x0, y0, x1, y1))
 
     return boxes
-
-
 
 
 ## YOLO PHone detectionj
@@ -243,27 +150,12 @@ def _detect_phones_yolo(yolo_model, frame_bgr, conf_thres = 0.4, img_size = 640)
     return phone_boxes
 
 
-### If hand-phone are near
-def phone_held_by_hand(hand_boxes, phone_boxes, iou_thres=0.02) -> bool:
-    """
-    Return True if any phone bbox overlaps/intersects any hand bbox.
-    
-    Logic:
-    - IOU > iou_thres (very small value tho) OR
-    - intersection (if bboxes are thin)
-    """
 
-    for hb in hand_boxes:
-        for (px0, py0, px1, py1, _conf) in phone_boxes:
-            pb = (px0, py0, px1, py1)
-            if _intersects(hb, pb) and _iou(hb, pb) >= iou_thres:
 
-                return True
-            if _intersects(hb, pb) and iou_thres <= 0.0:
-                #case of IOU small (some view angle of phone)
-                return True
 
-    return False
+
+
+
 
 
 
@@ -342,15 +234,10 @@ def main():
     yolo = YOLO("yolov8n.pt")
     phone_conf = 0.4
 
-
-    ## Smoothing and state machine
-    state = "AWAY" # AWAY/WORKING/PHONE_USE
-    phone_on_count = 0
-    phone_off_count = 0
-
-    PHONE_ON_FRAMES = 5 #If phone in mininum 5 frame, counts as phone presence
-    PHONE_OFF_FRAMES = 10 #Min number to reset phone counting
-
+    ## Use the state machine (sm) config class instead
+    sm = PhoneUseStateMachine(SmoothingConfig(phone_on_frames = 5, 
+                                              phone_off_frames = 10,
+                                              ))
 
     # Overlap threshold: (Need fine-tuning)
     HAND_PHONE_IOU = 0.02
@@ -440,34 +327,13 @@ def main():
                                                 iou_thres = HAND_PHONE_IOU)
 
 
+            state = sm.update(face_present = face_present, phone_held = phone_held)
 
 
 
             # New status lines
             n_faces = len(face_result.detections) if face_result.detections else 0
             n_phones = len(phone_boxes)
-
-
-            if not face_present:
-                status = "AWAY (no face)"
-                phone_on_count = 0
-                phone_off_count = 0
-                status_color = (0, 0, 255)
-
-            else:
-                if phone_held:
-                    phone_on_count += 1
-                    phone_off_count = 0
-                else:
-                    phone_off_count += 1
-                    phone_on_count = 0
-
-                
-                if phone_on_count >= PHONE_ON_FRAMES:
-                    state = "PHONE_USE"
-                elif phone_off_count >= PHONE_OFF_FRAMES:
-                    state = "WORKING"
-
 
             # FPS count
             frame_count += 1
@@ -490,19 +356,9 @@ def main():
 
             debug = f"{state} | F={int(face_present)} H={len(hand_boxes)} P={len(phone_boxes)} PH={int(phone_held)}"
 
-#             cv2.putText(
-#                     frame_bgr,
-#                     f"{debug} | fps={fps:.1f}",
-#                     (10, 30),
-#                     cv2.FONT_HERSHEY_SIMPLEX,
-#                     0.7,
-#                     status_color,
-#                     2, 
-#                     cv2.LINE_AA,
-#                     )
-
             draw_status_line(frame_bgr = frame_bgr,
                              text = f"{debug} : fps={fps:.1f}",
+                             color = status_color,
                              )
 
 
