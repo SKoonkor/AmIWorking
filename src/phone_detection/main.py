@@ -24,7 +24,6 @@ from detectors.phone import (
         PhoneDetector,
         PhoneDetectorConfig,
         )
-
 from detectors.hand import (
         HandDetector,
         HandDetectorConfig,
@@ -54,29 +53,6 @@ def _model_path(filename: str) -> str:
     model_path = _repo_root() / "models" / filename
 
     return str(model_path)
-
-## Define Geometry stuff
-
-def _clamp(v, lo, hi):
-    return max(lo, min(hi, v))
-
-
-def _get_face_boxes(detections):
-    """
-    Return list of face boxes as (x0, y0, x1, y1) in pixel coordinates.
-    """
-
-    boxes = []
-    for det in detections or []:
-        bb = det.bounding_box
-        x0 = int(bb.origin_x)
-        y0 = int(bb.origin_y)
-        x1 = int(bb.origin_x + bb.width)
-        y1 = int(bb.origin_y + bb.height)
-        boxes.append((x0, y0, x1, y1))
-
-    return boxes
-
 
 
 
@@ -120,18 +96,6 @@ def main():
 
 
     ###### MediaPipe setup
-    # BaseOptions = mp.tasks.BaseOptions
-    # VisionRunningMode = mp.tasks.vision.RunningMode
-
-#     FaceDetector = mp.tasks.vision.FaceDetector
-#     FaceDetectorOptions = mp.tasks.vision.FaceDetectorOptions
-# 
-#     face_options = FaceDetectorOptions(
-#             base_options = BaseOptions(model_asset_path = face_model),
-#             running_mode = VisionRunningMode.VIDEO,
-#             min_detection_confidence = 0.85,
-#             ) #Change min detection conf to more if want more strict detection
-
     face_cfg = FaceDetectorConfig(
             model_path = face_model,
             min_detection_confidence = 0.6,
@@ -145,18 +109,8 @@ def main():
             min_tracking_confidence = 0.5,
             bbox_pad_px = 10,)
 
-    # hand_detector = HandDetector(hand_cfg)
-
-
-
-
 
     ## YOLO (phone detection)
-    # 'yolov8n.pt' is the smallest + fastest general model.
-    # First run will download it,,,, nice
-    # yolo = YOLO("yolov8n.pt")
-    # phone_conf = 0.4
-
     phone_detector = PhoneDetector(
             PhoneDetectorConfig(weights = "yolov8n.pt",
                                 conf = 0.5,
@@ -211,11 +165,8 @@ def main():
 
             ###########################################
             ####### Run detection
-            
             #___________________
             # Run face detection
-#             face_result = face_detector.detect_for_video(mp_image, timestamp_ms)
-#             face_present = bool(face_result.detections)
             face_present, face_detections = face_detector.detect(mp_image, timestamp_ms)
 #             # Draw face Detections
             if face_detections:
@@ -250,14 +201,9 @@ def main():
                                                 phone_boxes,
                                                 iou_thres = HAND_PHONE_IOU)
 
-
+            # Update state machine
             state = sm.update(face_present = face_present, phone_held = phone_held)
 
-
-
-            # New status lines
-            # n_faces = len(face_result.detections) if face_result.detections else 0
-            # n_phones = len(phone_boxes)
 
             # FPS count
             frame_count += 1
@@ -292,9 +238,6 @@ def main():
             # Exit when 'q' is press
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
-
-    # Close Mediapipe tasks
-    hand_detector.close()
 
     # Cleanup
     cap.release()
