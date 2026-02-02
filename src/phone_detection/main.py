@@ -7,54 +7,40 @@ import cv2
 import mediapipe as mp
 
 # Local packages
-from visualize import (
+from phone_detection.visualize import (
         draw_face_detection,
         draw_hand_boxes,
         draw_phone_boxes,
         draw_status_line,
         )
 
-from logic import (
+from phone_detection.logic import (
         phone_held_by_hand, 
         PhoneUseStateMachine,
         SmoothingConfig,
         )
 
-from detectors.phone import (
+from phone_detection.detectors.phone import (
         PhoneDetector,
         PhoneDetectorConfig,
         )
-from detectors.hand import (
+from phone_detection.detectors.hand import (
         HandDetector,
         HandDetectorConfig,
         )
-from detectors.face import (
+from phone_detection.detectors.face import (
         FacePresenceDetector,
         FaceDetectorConfig,
         )
 
-from camera import (
+from phone_detection.camera import (
         Camera,
         CameraConfig,
         )
 
+from phone_detection.config import load_settings, resolve_model_path
+
 ## PATHS to models
-
-def _repo_root() -> Path:
-    """
-    Assumes: <repo>/src/phone_detection/main.py
-    """
-    return Path(__file__).resolve().parents[2]
-
-def _model_path(filename: str) -> str:
-    """
-    Resolve models/model_file  relative to the repo root.
-
-    Face: blaze_face_short_range.tflite
-    Hand: hand_landmarker.task
-    """
-    model_path = _repo_root() / "models" / filename
-    return str(model_path)
 
 def main():
     """
@@ -66,50 +52,67 @@ def main():
     - Quite function (by pressing some key or a combination of keys)
     """
 
-    ## Paths to models
-    # face_model_path = _resolve_model_path()
+    ## Open setting from config/settings.toml
+    settings = load_settings()
 
-    face_model = _model_path("blaze_face_short_range.tflite")
-    hand_model = _model_path("hand_landmarker.task")
-    
-    if not Path(face_model).exists():
-        raise FileNotFoundError(
-                f"Could not find face model file at:\n {face_model}\n\n"
-                "Creat <repo>/models and put face_detector inside it.")
-
-    if not Path(hand_model).exists():
-        raise FileNotFoundError(
-                f"Could not find model file at:\n {hand_model}\n\n"
-                "Creat <repo>/models and put hand_detector inside it.")
+    phone_grace_s = settings.tracking.get("phone_grace_s", 0.7) # Improving phone and hand detection
+    hand_grace_s = settings.tracking.get("hand_grace_s", 0.7)
 
 
     ## Open camera
-    camera_cfg = CameraConfig()
+    resize_max = settings.camera.get("resize_max", None)
+    if resize_max == 0:
+        resize_max = None
 
+    camera_cfg = CameraConfig(
+            index = settings.camera.get("index", 0),
+            flip_horizontal = settings.camera.get("flip_horizontal", True),
+            resize_max = resize_max,)
 
     ###### MediaPipe setup
+    ## Paths to models
+    face_model = resolve_model_path(settings.models["face_task"])
+    hand_model = resolve_model_path(settings.models["hand_task"])
+    yolo_weights = settings.models.get("yolo_weights", "yolov8n.pt")
+
+    # detectors cfg
     face_cfg = FaceDetectorConfig(
             model_path = face_model,
+            min_detection_confidence = settings.face.get("min_detection_confidence", 0.6),
             )
 
     hand_cfg = HandDetectorConfig(
             model_path = hand_model,
-            num_hands = 2,
-            bbox_pad_px = 10,)
+            num_hands = settings.hands.get("num_hands", 2),
+            min_hand_detection_confidence = settings.hands.get("min_hand_detection_confidence", 0.5),
+            min_hand_presence_confidence = settings.hands.get("min_hand_presence_confidence", 0.5),
+            min_tracking_confidence = settings.hands.get("min_tracking_confidence", 0.5),
+            bbox_pad_px = settings.hands.get("bbox_pad_px", 10),
+            ) # the default will be tighen up using HandDetectorConfig(..., **settings.hands)
+
 
     ## YOLO (phone detection)
     phone_detector = PhoneDetector(
-            PhoneDetectorConfig(weights = "yolov8n.pt",
-                                img_size = 640)
+            PhoneDetectorConfig(
+                weights = yolo_weights,
+                conf = settings.phone.get("conf", 0.5),
+                img_size = settings.phone.get("img_size", 640),
+            )
             )
 
     ## Use the state machine (sm) config class instead
-    sm = PhoneUseStateMachine(SmoothingConfig(phone_on_frames = 5, 
-                                              phone_off_frames = 10,
-                                              ))
+    sm = PhoneUseStateMachine(
+        SmoothingConfig(
+            phone_on_frames = settings.smoothing.get("phone_on_frames", 5),
+            phone_off_frames = settings.smoothing.get("phone_off_frames", 10),
+            )
+        )
+
+                
 
     # Overlap threshold: (Need fine-tuning)
-    HAND_PHONE_IOU = 0.02
+    HAND_PHONE_IOU = settings.association.get("hand_phone_iou", 0.02)
+    REQUIRE_IOU = settings.association.get("require_iou", True)
 
 
     # Timimg
@@ -117,6 +120,8 @@ def main():
     last_fps_t = time.monotonic()
     fps = 0.0
     frame_count = 0
+    last_phone_seen_t = -1e9
+    last_hand_seen_t = -1e9
 
 
 
@@ -166,25 +171,59 @@ def main():
                                               image_w = w,
                                               image_h = h,
                                               )
+            now_t = time.monotonic() # Setting time to once hand/phone detected 
+            hand_seen_now = len(hand_boxes) > 0
+            if hand_seen_now:
+                last_hand_seen_t = now_t
 
             if hand_boxes:
                 draw_hand_boxes(frame_bgr, hand_boxes)
+
 
             #____________________
             # Run phone detection
             phone_boxes = phone_detector.detect(frame_bgr)
 
+            phone_seen_now = len(phone_boxes) > 0
+            if phone_seen_now:
+                last_phone_seen_t = now_t
             if phone_boxes:
                 draw_phone_boxes(frame_bgr, phone_boxes)
+
+
+            # Phone and Hand appreared on screen recently?
+            hand_recent = hand_seen_now or (now_t - last_hand_seen_t) < hand_grace_s
+            phone_recent = phone_seen_now or (now_t - last_phone_seen_t) < phone_grace_s
+
+              
 
 
             #___________________________________
             #__________IF PHONE IN HAND
             phone_held = False
-            if hand_boxes and phone_boxes:
-                phone_held = phone_held_by_hand(hand_boxes,
-                                                phone_boxes,
-                                                iou_thres = HAND_PHONE_IOU)
+#             if hand_boxes and phone_boxes:
+#                 phone_held = phone_held_by_hand(hand_boxes,
+#                                                 phone_boxes,
+#                                                 iou_thres = HAND_PHONE_IOU,
+#                                                 require_iou = REQUIRE_IOU,)
+            # New logic for holding phone based on phone and hand both detected now
+            if hand_seen_now and phone_seen_now:
+                phone_held = phone_held_by_hand(
+                        hand_boxes,
+                        phone_boxes,
+                        iou_thres = HAND_PHONE_IOU,
+                        require_iou = REQUIRE_IOU,
+                        )
+
+            elif phone_seen_now and hand_recent and sm.state == "PHONE_USE":
+                # Recently saw a hand. Assume it is still holding during short occlusion.
+                phone_held = True
+
+            elif hand_seen_now and phone_recent:
+                # Recently saw a phone. Assume it is still being held.
+                phone_held = True
+
+            
 
             # Update state machine
             state = sm.update(face_present = face_present, phone_held = phone_held)

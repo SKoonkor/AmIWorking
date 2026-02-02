@@ -32,7 +32,7 @@ def iou(a, b) -> float:
     return inter / union if union > 0 else 0.0
 
 # If hand-phone are near
-def phone_held_by_hand(hand_boxes, phone_boxes, iou_thres=0.02) -> bool:
+def phone_held_by_hand(hand_boxes, phone_boxes, iou_thres=0.02, require_iou=True) -> bool:
     """
     Return True if any phone bbox overlaps/intersects any hand bbox.
 
@@ -44,12 +44,18 @@ def phone_held_by_hand(hand_boxes, phone_boxes, iou_thres=0.02) -> bool:
     for hb in hand_boxes:
         for (px0, py0, px1, py1, _conf) in phone_boxes:
             pb = (px0, py0, px1, py1)
-            if intersects(hb, pb) and iou(hb, pb) >= iou_thres:
 
+            if not intersects(hb, pb):
+                continue
+            if not require_iou:
                 return True
-            if intersects(hb, pb) and iou_thres <= 0.0:
-                #case of IOU small (some view angle of phone)
+            if iou(hb, pb) >= iou_thres:
                 return True
+#             if intersects(hb, pb) and iou(hb, pb) >= iou_thres:
+#                 return True
+#             if intersects(hb, pb) and iou_thres <= 0.0:
+#                 #case of IOU small (some view angle of phone)
+#                 return True
 
     return False
 

@@ -1,0 +1,35 @@
+[camera]
+index = 0
+flip_horizontal = true
+resize_max = 0  # set to 0 to disable resizing
+
+[models]
+face_task = "models/blaze_face_short_range.tflite"
+hand_task = "models/hand_landmarker.task"
+yolo_weights = "yolov8n.pt"
+
+[face]
+min_detection_confidence = 0.6
+
+[hands]
+num_hands = 2
+min_hand_detection_confidence = 0.5
+min_hand_presence_confidence = 0.5
+min_tracking_confidence = 0.5
+bbox_pad_px = 10
+
+[phone]
+conf = 0.5
+img_size = 320
+
+[association]
+hand_phone_iou = 0.02
+require_iou = true
+
+[smoothing]
+phone_on_frames = 5
+phone_off_frames = 10
+
+[tracking]
+phone_grace_s = 0.7
+hand_grace_s = 0.7
