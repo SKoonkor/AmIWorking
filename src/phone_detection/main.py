@@ -10,12 +10,14 @@ import mediapipe as mp
 from phone_detection.visualize import (
         draw_face_detection,
         draw_hand_boxes,
+        draw_fingertips,
         draw_phone_boxes,
         draw_status_line,
         )
 
 from phone_detection.logic import (
         phone_held_by_hand, 
+        phone_held_by_fingertips,
         PhoneUseStateMachine,
         SmoothingConfig,
         )
@@ -91,12 +93,21 @@ def main():
             ) # the default will be tighen up using HandDetectorConfig(..., **settings.hands)
 
 
-    ## YOLO (phone detection)
+    ## YOLO (phone detection) with the tracking algorithm
+    track_cfg = settings.phone_tracking
+
     phone_detector = PhoneDetector(
             PhoneDetectorConfig(
                 weights = yolo_weights,
                 conf = settings.phone.get("conf", 0.5),
                 img_size = settings.phone.get("img_size", 640),
+
+                enable_tracking = track_cfg.get("enable_tracking", True),
+                tracker_type = track_cfg.get("tracker_type", "CSRT"),
+                min_init_conf = track_cfg.get("min_init_conf", 0.6),
+                max_track_age_s = track_cfg.get("max_track_age_s", 1.0),
+                min_track_box_area = track_cfg.get("min_track_box_area", 800),
+                yolo_every_n = track_cfg.get("yolo_every_n", 3),
             )
             )
 
@@ -166,18 +177,24 @@ def main():
             #____________________
             # Run hand detections
 
-            hand_boxes = hand_detector.detect(mp_image,
-                                              timestamp_ms,
-                                              image_w = w,
-                                              image_h = h,
-                                              )
+#             hand_boxes = hand_detector.detect(mp_image,
+#                                               timestamp_ms,
+#                                               image_w = w,
+#                                               image_h = h,
+#                                               )
+            hands = hand_detector.detect(mp_image, timestamp_ms, image_w = w, image_h = h)
+            hand_boxes = [h["bbox"] for h in hands] #
+
+
             now_t = time.monotonic() # Setting time to once hand/phone detected 
             hand_seen_now = len(hand_boxes) > 0
             if hand_seen_now:
                 last_hand_seen_t = now_t
 
-            if hand_boxes:
-                draw_hand_boxes(frame_bgr, hand_boxes)
+            # if hand_boxes:
+            draw_hand_boxes(frame_bgr, [h["bbox"] for h in hands])
+            draw_fingertips(frame_bgr, hands, draw_all_landmarks = True) # Need to add Settings.toml
+
 
 
             #____________________
@@ -208,12 +225,13 @@ def main():
 #                                                 require_iou = REQUIRE_IOU,)
             # New logic for holding phone based on phone and hand both detected now
             if hand_seen_now and phone_seen_now:
-                phone_held = phone_held_by_hand(
-                        hand_boxes,
-                        phone_boxes,
-                        iou_thres = HAND_PHONE_IOU,
-                        require_iou = REQUIRE_IOU,
-                        )
+#                 phone_held = phone_held_by_hand(
+#                         hand_boxes,
+#                         phone_boxes,
+#                         iou_thres = HAND_PHONE_IOU,
+#                         require_iou = REQUIRE_IOU,
+#                         )
+                phone_held = phone_held_by_fingertips(hands, phone_boxes, dist_factor = 0.2)
 
             elif phone_seen_now and hand_recent and sm.state == "PHONE_USE":
                 # Recently saw a hand. Assume it is still holding during short occlusion.
@@ -243,7 +261,7 @@ def main():
             if state == "AWAY":
                 status_color = (0, 0, 255)
             elif state == "PHONE_USE":
-                status_color = (0, 255, 255)
+                status_color = (0, 0, 255)
             else:
                 status_color = (0, 255, 0)
 
@@ -254,6 +272,8 @@ def main():
                              text = f"{debug} : fps={fps:.1f}",
                              color = status_color,
                              )
+
+            
 
 
             # Show the frame

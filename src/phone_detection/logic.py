@@ -31,6 +31,27 @@ def iou(a, b) -> float:
 
     return inter / union if union > 0 else 0.0
 
+def _point_to_box_distance(px, py, box):
+    """
+    To define if a finger tip is too far away from phone box
+    """
+    x0, y0, x1, y1 = box
+
+    # distance from point to box (0 if inside)
+    dx = 0
+    if px < x0:
+        dx = x0 - px
+    elif px > x1:
+        dx = px - x1
+
+    dy = 0
+    if py < y0:
+        dy = y0 - py
+    elif py > y1:
+        dy = py - y1
+
+    return (dx * dx + dy * dy) ** 0.5
+
 # If hand-phone are near
 def phone_held_by_hand(hand_boxes, phone_boxes, iou_thres=0.02, require_iou=True) -> bool:
     """
@@ -51,13 +72,29 @@ def phone_held_by_hand(hand_boxes, phone_boxes, iou_thres=0.02, require_iou=True
                 return True
             if iou(hb, pb) >= iou_thres:
                 return True
-#             if intersects(hb, pb) and iou(hb, pb) >= iou_thres:
-#                 return True
-#             if intersects(hb, pb) and iou_thres <= 0.0:
-#                 #case of IOU small (some view angle of phone)
-#                 return True
-
     return False
+
+# Use fingertips instead
+def phone_held_by_fingertips(hands, phone_boxes, dist_factor = 0.25,
+                             use_tips = ("thumb", "index", "middle", "ring", "pinky")):
+    """
+    Description
+    """
+    for (px0, py0, px1, py1, _conf) in phone_boxes:
+        phone_box = (px0, py0, px1, py1)
+        pw = max(1, px1 - px0)
+        ph = max(1, py1 - py0)
+        thresh = dist_factor * max(pw, ph)   # dist is proportion to phone size
+
+        for hand in hands:
+            tips = hand["tips"]
+            for name in use_tips:
+                tx, ty = tips[name]
+                if _point_to_box_distance(tx, ty, phone_box) <= thresh:
+                    return True
+    return False
+
+
 
 ## State Machine
 @dataclass

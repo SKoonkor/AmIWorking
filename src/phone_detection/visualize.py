@@ -52,6 +52,27 @@ def draw_hand_boxes(frame_bgr, hand_boxes):
                 cv2.LINE_AA,
                 )
 
+def draw_fingertips(frame_bgr, hands, draw_all_landmarks = True):
+    """
+    hands: list of dicts from HandDetector.detect()
+    """
+    for hand in hands:
+        if draw_all_landmarks and "landmarks" in hand:
+            for (x, y) in hand["landmarks"]:
+                cv2.circle(frame_bgr, (x, y), 2, (255, 0, 255), -1)
+
+        for name, (x, y) in hand["tips"].items():
+            cv2.circle(frame_bgr, (x, y), 6, (0, 255, 255), -1)
+            cv2.putText(
+                    frame_bgr, name, (x + 6, y - 6),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA
+                    )
+
+
+
+
+
+
 def draw_phone_boxes(frame_bgr, phone_boxes):
     """
     phone_boxes: list of tubles (x0, y0, x1, y1, conf)
@@ -70,7 +91,7 @@ def draw_phone_boxes(frame_bgr, phone_boxes):
                 cv2.LINE_AA,
                 )
 
-def draw_status_line(frame_bgr, text, color = (255, 255, 255), origin = (10, 30)):
+def draw_status_line(frame_bgr, text, color = (255, 255, 255), origin = (640, 30)):
 
     """
     Draw a single status line at the (10, 30), top-left ish

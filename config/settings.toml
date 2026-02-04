@@ -19,7 +19,7 @@ min_tracking_confidence = 0.5
 bbox_pad_px = 10
 
 [phone]
-conf = 0.5
+conf = 0.3
 img_size = 320
 
 [association]
@@ -31,5 +31,14 @@ phone_on_frames = 5
 phone_off_frames = 10
 
 [tracking]
-phone_grace_s = 0.7
-hand_grace_s = 0.7
+phone_grace_s = 0.8
+hand_grace_s = 0.8
+
+[phone_tracking]
+enable_tracking = true
+tracker_type = "CSRT"
+min_init_conf = 0.5
+max_track_age_s = 3.0
+min_track_box_area = 800
+yolo_every_n = 20
+

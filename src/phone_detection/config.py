@@ -15,6 +15,7 @@ class Settings:
     association: dict
     smoothing: dict
     tracking: dict
+    phone_tracking: dict
 
 def repo_root() -> Path:
     # expect <repo>/src/phone_detection/config.py
@@ -44,6 +45,7 @@ def load_settings(toml_path: str | Path = "config/settings.toml") -> Setting:
     association = raw.get("association", {})
     smoothing = raw.get("smoothing", {})
     tracking = raw.get("tracking", {})
+    phone_tracking = raw.get("phone_tracking", {})
 
     return Settings(
             camera = camera,
@@ -54,6 +56,7 @@ def load_settings(toml_path: str | Path = "config/settings.toml") -> Setting:
             association = association,
             smoothing = smoothing,
             tracking = tracking,
+            phone_tracking = phone_tracking,
             )
 
 

@@ -27,6 +27,24 @@ def _bbox_from_normalized_landmarks(norm_landmarks, w: int, h: int, pad: int = 1
 
     return (x0, y0, x1, y1)
 
+TIP_IDXS = {
+        "thumb": 4,
+        "index": 8,
+        "middle": 12,
+        "ring": 16,
+        "pinky": 20,
+        }
+
+def _landmarks_to_pixels(norm_landmarks, w: int, h: int):
+    pts = []
+    for lm in norm_landmarks:
+        x = int(_clamp(lm.x, 0.0, 1.0) * w)
+        y = int(_clamp(lm.y, 0.0, 1.0) * h)
+
+        pts.append((x, y))
+    return pts
+
+
 
 @dataclass
 class HandDetectorConfig:
@@ -36,6 +54,7 @@ class HandDetectorConfig:
     min_hand_presence_confidence: float = 0.5
     min_tracking_confidence: float = 0.5
     bbox_pad_px: int = 10
+    return_landmarks: bool = True
 
 
 
@@ -73,25 +92,37 @@ class HandDetector:
     def detect(self, mp_image, timestamp_ms: int, image_w: int, image_h: int):
         """
         mediapipe.Image(SRGB) -> mp_image
-
         """
 
         result = self._detector.detect_for_video(mp_image, timestamp_ms)
 
-         
-        hand_boxes = []
+        hands = []
         if result.hand_landmarks:
             for hand_lms in result.hand_landmarks:
-                hb = _bbox_from_normalized_landmarks(
+                bbox = _bbox_from_normalized_landmarks(
                         hand_lms,
                         w = image_w,
                         h = image_h,
                         pad = self.cfg.bbox_pad_px,
                         )
-                if hb is not None:
-                    hand_boxes.append(hb)
+                # if hb is not None:
+                #     hand_boxes.append(hb)
+                if bbox is None:
+                    continue
+                
+                pts = _landmarks_to_pixels(hand_lms, image_w, image_h) # 21 points! Bruv!
+                tips = {name: pts[idx] for name, idx in TIP_IDXS.items()}
 
-        return hand_boxes
+                hand = {
+                        "bbox": bbox,
+                        "tips": tips,
+                        }
+
+                if self.cfg.return_landmarks:
+                    hand["landmarks"] = pts
+
+                hands.append(hand)
+        return hands
 
     def __enter__(self):
         return self
