@@ -19,8 +19,8 @@ min_tracking_confidence = 0.5
 bbox_pad_px = 10
 
 [phone]
-conf = 0.3
-img_size = 320
+conf = 0.1
+img_size = 640
 
 [association]
 hand_phone_iou = 0.02
@@ -39,6 +39,13 @@ enable_tracking = true
 tracker_type = "CSRT"
 min_init_conf = 0.5
 max_track_age_s = 3.0
-min_track_box_area = 800
-yolo_every_n = 20
+min_track_box_area = 1000
+yolo_every_n = 1
+
+[phone_score]
+score_init = 0.0
+score_inc = 0.2
+score_decay_tracker = 0.99
+score_decay_miss = 0.9
+score_drop = 0.30
 

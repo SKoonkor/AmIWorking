@@ -6,6 +6,8 @@ from pathlib import Path
 import cv2
 import mediapipe as mp
 
+import simpleaudio
+
 # Local packages
 from phone_detection.visualize import (
         draw_face_detection,
@@ -95,6 +97,7 @@ def main():
 
     ## YOLO (phone detection) with the tracking algorithm
     track_cfg = settings.phone_tracking
+    score_cfg = settings.phone_score
 
     phone_detector = PhoneDetector(
             PhoneDetectorConfig(
@@ -108,6 +111,13 @@ def main():
                 max_track_age_s = track_cfg.get("max_track_age_s", 1.0),
                 min_track_box_area = track_cfg.get("min_track_box_area", 800),
                 yolo_every_n = track_cfg.get("yolo_every_n", 3),
+
+                score_init = score_cfg.get("score_init", 0.0),
+                score_inc = score_cfg.get("score_inc", 0.35),
+                score_decay_tracker = score_cfg.get("score_decay_miss", 0.80),
+                score_decay_miss = score_cfg.get("score_decay_miss", 0.80),
+                score_drop = score_cfg.get("score_drop", 0.15),
+
             )
             )
 
@@ -258,8 +268,8 @@ def main():
 
 
             # status show
-            if state == "AWAY":
-                status_color = (0, 0, 255)
+            if state == "WORKING":
+                status_color = (0, 255, )
             elif state == "PHONE_USE":
                 status_color = (0, 0, 255)
             else:

@@ -20,6 +20,14 @@ class PhoneDetectorConfig:
     yolo_every_n: int = 3               # run YOLO every N frames (tracking fills the gap)
 
 
+    # Score system
+    score_init: float = 0.0
+    score_inc: float = 0.35             # If YOLO detects phone, score increase by a factor
+    score_decay_tracker: float = 0.92   # decay when only tracker updates
+    score_decay_miss: float = 0.80      # decay when neither Yolo nor tracker updates
+    score_drop: float = 0.15            # if score below this, == no phone
+
+
 def _clamp(v, lo, hi):
     return max(lo, min(hi, v))
 
@@ -64,6 +72,9 @@ class PhoneDetector:
         self._tracked_xyxy = None
         self._last_yolo_confirm_t = -1e9
         self._frame_i = 0
+
+        self._score = cfg.score_init
+        self._had_update_this_frame = False
 
     def _detect_yolo(self, frame_bgr):
         """Return phone boxes from YOLO only."""
@@ -116,6 +127,8 @@ class PhoneDetector:
         - Else, if tracker exists, update it.
         - Drop tracker if too old since last YOLO confirm or box is invalid.
         """
+        self._had_update_this_frame = False
+
         h, w = frame_bgr.shape[:2]
 
         # (Re)initialize tracker if we have a strong YOLO detection
@@ -128,6 +141,7 @@ class PhoneDetector:
                 if ok:
                     self._tracked_xyxy = (x0, y0, x1, y1)
                     self._last_yolo_confirm_t = now_t
+                    self._had_update_this_frame = True
                     print ("YOLO updated box")
 
         # Update tracker if YOLO didn't confirm this frame
@@ -141,6 +155,7 @@ class PhoneDetector:
                 x1 = _clamp(x1, 0, w - 1)
                 y1 = _clamp(y1, 0, h - 1)
                 self._tracked_xyxy = (x0, y0, x1, y1)
+                self._had_update_this_frame = True
             else:
                 # Tracker failed this frame
                 self._tracker = None
@@ -157,6 +172,7 @@ class PhoneDetector:
         if self._tracked_xyxy is not None:
             x0, y0, x1, y1 = self._tracked_xyxy
             area = max(0, x1 - x0) * max(0, y1 - y0)
+            print (area)
             if area < self.cfg.min_track_box_area:
                 self._tracker = None
                 self._tracked_xyxy = None
@@ -182,66 +198,38 @@ class PhoneDetector:
         # Update/init tracker using YOLO and/or tracking step
         self._maybe_init_or_update_tracker(frame_bgr, yolo_boxes, now_t)
 
+        # Score based
         if yolo_boxes:
-            # If YOLO run and found phones, return that
-            return yolo_boxes
+            # use best YOLO phone detection as evidence
+            best_conf = float(yolo_boxes[0][4])
+            # conf is already in [0, 1]; push score upward
+            self._score = min(3.0, self._score + self.cfg.score_inc * best_conf)
+
+        elif self._had_update_this_frame:
+            # tracker updated bbox but no YOLO detection
+            self._score *= self.cfg.score_decay_tracker
+        else:
+            # Neither Yolo nor tracker gave anything
+            self._score *= self.cfg.score_decay_miss
+
+        self._score = float(_clamp(self._score, 0.0, 3.0))
+
+        # if score too low, drop everything
+        if self._score < self.cfg.score_drop:
+            self._tracker = None
+            self._tracked_xyxy = None
+            return []
+
+        # Return
+        if yolo_boxes:
+            # Return best YOLO box but replace conf with score
+            x0, y0, x1, y1, _ = yolo_boxes[0]
+            return [(x0, y0, x1, y1, self._score)]
 
         if self._tracked_xyxy is not None:
             x0, y0, x1, y1 = self._tracked_xyxy
             # Syn here
-            return [(x0, y0, x1, y1, 1.0)]
+            return [(x0, y0, x1, y1, self._score)]
 
         return []
 
-
-#         h, w = frame_bgr.shape[:2]
-# 
-#         # Resize for speed (keep aspect ratio by simple scaling)
-#         scale = self.cfg.img_size/max(h,w)
-#     
-#         if scale < 1.0:
-#             new_w = int(w * scale)
-#             new_h = int(h * scale)
-#             small = cv2.resize(frame_bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
-#         else:
-#             small = frame_bgr
-#             new_h, new_w = h, w
-#             scale = 1.0
-#     
-#         # Ultralytics expects BGR or RGB
-#         # verbose = False keeps the console clean.
-#         results = self.model.predict(small, conf = self.cfg.conf, verbose=False)
-#     
-#         phone_boxes = []
-#         r0 = results[0]
-#         if r0.boxes is None or len(r0.boxes) == 0:
-#             return phone_boxes
-#     
-#         names = r0.names # dict: class_id -> class_name
-#     
-#         # Iterate detections
-#         for box in r0.boxes:
-#             cls_id = int(box.cls.item())
-#             cls_name = names.get(cls_id, str(cls_id))
-#             if cls_name != "cell phone":
-#                 continue
-#     
-#             conf = float(box.conf.item())
-#             x0, y0, x1, y1, = box.xyxy[0].tolist()
-#     
-#             # Map back to origianl frame coordinates
-#             if scale != 1.0:
-#                 x0 = x0 / scale
-#                 y0 = y0 / scale
-#                 x1 = x1 / scale
-#                 y1 = y1 / scale
-#     
-#             # Clamp + int
-#             x0 = _clamp(int(x0), 0, w - 1)
-#             y0 = _clamp(int(y0), 0, h - 1)
-#             x1 = _clamp(int(x1), 0, w - 1)
-#             y1 = _clamp(int(y1), 0, h - 1)
-#     
-#             phone_boxes.append((x0, y0, x1, y1, conf))
-#     
-#         return phone_boxes

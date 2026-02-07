@@ -111,12 +111,12 @@ class PhoneUseStateMachine:
 
     def __init__(self, cfg: SmoothingConfig):
         self.cfg = cfg
-        self.state = "AWAY"
+        self.state = "WORKING"
         self._on = 0
         self._off = 0
 
     def reset(self):
-        self.state = "AWAY"
+        self.state = "WORKING"
         self._on = 0
         self._off = 0
 
@@ -125,11 +125,11 @@ class PhoneUseStateMachine:
         Update counters and return state
         """
 
-        if not face_present:
-            self.state = "AWAY"
-            self._on = 0
-            self._off = 0
-            return self.state
+#         if not face_present:
+#             self.state = "AWAY"
+#             self._on = 0
+#             self._off = 0
+#             return self.state
         
         # Face present
         if phone_held:
